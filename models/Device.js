@@ -20,6 +20,7 @@ const deviceSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  isDeleted: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 

@@ -3,6 +3,8 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const DeviceOTA = require('../models/DeviceOTA');
 const OTATask = require('../models/OTATask');
+const Package = require('../models/Package');
+const Device = require('../models/Device');
 const asyncHandler = require('express-async-handler');
 
 const { checkAndUpdateOTAStatus } = require('../config/mqtt');
@@ -61,31 +63,6 @@ router.get('/', asyncHandler(async (req, res) => {
   }
 }));
 
-// 获取单个任务详情
-router.get('/:id', asyncHandler(async (req, res) => {
-  const OTATaskId = req.params.id;
-
-  // 验证ID格式
-  if (!mongoose.Types.ObjectId.isValid(OTATaskId)) {
-    const error = new Error('无效的ID格式');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  // 查询数据库
-  const _OTATask = await Package.findById(OTATaskId);
-
-  // 处理未找到情况
-  if (!_OTATask) {
-    const error = new Error('未找到指定任务');
-    error.statusCode = 500;
-    throw error;
-  }
-
-  // 返回标准化响应
-  res.status(200).json(_OTATask);
-}));
-
 // 删除任务
 router.delete('/:id', asyncHandler(async (req, res) => {
   // 1. 查找文档记录
@@ -104,10 +81,19 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 }));
 
 // 重试任务
-router.post('/retry/:id', asyncHandler(async (req, res) => {
+router.post('/retry', asyncHandler(async (req, res) => {
   try {
+    const { packageId, id } = req.body;
+    // 判断资源包是否被删除
+    const _package = await Package.findById(packageId);
+    if (!_package) {
+      return res.status(500).json({ error: '资源包不存在' });
+    }
+    if (_package.isDeleted) {
+      return res.status(500).json({ error: '资源包已被删除' });
+    }
     // 查找DeviceOTA记录
-    const _DeviceOTATask = await DeviceOTA.findById(req.params.id);
+    const _DeviceOTATask = await DeviceOTA.findById(id);
     if (!_DeviceOTATask) {
       return res.status(500).json({ error: '任务不存在' });
     }
@@ -131,7 +117,7 @@ router.post('/retry/:id', asyncHandler(async (req, res) => {
   }
 }));
 
-// 重试任务
+// 停止单个设备OTA任务
 router.post('/stop/:id', asyncHandler(async (req, res) => {
   try {
     // 查找DeviceOTA记录
@@ -140,18 +126,90 @@ router.post('/stop/:id', asyncHandler(async (req, res) => {
       return res.status(500).json({ error: '任务不存在' });
     }
 
-    // TODO 判断设备端是否在执行中，执行中需要等待设备端终止任务
-    _DeviceOTATask.status = 'canceled';
-    _DeviceOTATask.description = '';
-    _DeviceOTATask.path = '';
-    await _DeviceOTATask.save();
-    
+    if (_DeviceOTATask.status === 'running') {
+      _DeviceOTATask.status = 'stopping';
+      _DeviceOTATask.description = '正在停止中';
+      await _DeviceOTATask.save();
+
+      // 发布mqtt 通知设备端停止升级
+      const device = await Device.findById(_DeviceOTATask.device);
+      if (device) {
+        const topic = `/devices/${device.deviceId}/sys/messages/down`;
+        const payload = JSON.stringify({
+          type: "OTA",
+          stop: true
+        });
+        console.log(`[OTA] 发布mqtt 通知设备端停止升级 ${device.deviceId}`);
+        req.app.mqttClient.publish(topic, payload, { qos: 1 });
+      }
+    } else {
+      _DeviceOTATask.status = 'canceled';
+      _DeviceOTATask.description = '';
+      _DeviceOTATask.path = '';
+      await _DeviceOTATask.save();
+    }
+
     // 判断是否更新OTA任务状态
     checkAndUpdateOTAStatus(_DeviceOTATask);
 
     res.status(200).json({
-      message: '停止成功',
+      message: '操作成功',
       id: _DeviceOTATask._id
+    });
+  } catch (err) {
+    const error = new Error(err.message);
+    error.status = 500;
+    throw error;
+  }
+}));
+
+// 停止整个任务
+router.post('/stopTask/:id', asyncHandler(async (req, res) => {
+  try {
+    // 查找OTATask记录
+    const _OTATask = await OTATask.findById(req.params.id);
+    if (!_OTATask) {
+      return res.status(500).json({ error: '任务不存在' });
+    }
+
+    const updatePendingDeviceOtas = await DeviceOTA.updateMany(
+      { otaTask: _OTATask._id, status: 'pending' },
+      { $set: { status: 'canceled', description: '', path: '' }
+    });
+    const runningDeviceOtas = await DeviceOTA.find({ otaTask: _OTATask._id, status: 'running' });
+    if (runningDeviceOtas.length > 0) {
+      runningDeviceOtas.forEach(async item => {
+        item.status = 'stopping';
+        item.description = '正在停止中';;
+        await item.save();
+
+        // 发布mqtt 通知设备端停止升级
+        const device = await Device.findById(item.device);
+        if (device) {
+          const topic = `/devices/${device.deviceId}/sys/messages/down`;
+          const payload = JSON.stringify({
+            type: "OTA",
+            stop: true
+          })
+          console.log(`[OTA] 发布mqtt 通知设备端停止升级 ${device.deviceId}`);
+          req.app.mqttClient.publish(topic, payload, { qos: 1 });
+        }
+      })
+    }
+
+    if (updatePendingDeviceOtas.modifiedCount > 0 || runningDeviceOtas.length > 0) {
+      // 更新OTA任务状态
+      let status = 'canceled';
+      if (runningDeviceOtas.length > 0) {
+        status = 'stopping';
+      }
+      _OTATask.status = status;
+      await _OTATask.save();
+    }
+
+    res.status(200).json({
+      message: '操作成功',
+      id: _OTATask._id
     });
   } catch (err) {
     const error = new Error(err.message);

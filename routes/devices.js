@@ -69,7 +69,7 @@ router.post('/', asyncHandler(async (req, res) => {
 // 获取设备列表（包含关联产品信息）
 router.get('/', asyncHandler(async (req, res) => {
   try {
-    const devices = await Device.find().populate('product');
+    const devices = await Device.find({ isDeleted: false }).populate('product');
     res.json(devices);
   } catch (err) {
     const error = new Error(err.message);
@@ -81,7 +81,7 @@ router.get('/', asyncHandler(async (req, res) => {
 // 获取设备列表（包含设备OTA升级任务信息）
 router.get('/getDataWidthOTATask', asyncHandler(async (req, res) => {
   const { productId } = req.query; // 获取查询参数中的 productId
-  let query = {};
+  let query = { isDeleted: false };
   if (productId) {
     query.product = new mongoose.Types.ObjectId(productId); // 设置查询条件
   }
@@ -187,7 +187,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const device = await Device.findById(deviceId).populate('product');
 
   // 处理未找到情况
-  if (!device) {
+  if (!device || device.isDeleted) {
     const error = new Error('未找到指定设备');
     error.statusCode = 500;
     throw error;
@@ -208,12 +208,14 @@ router.delete('/:id', async (req, res) => {
       throw error; // 直接抛出错误
     }
 
-    const deletedDevice = await Device.findByIdAndDelete(deviceId);
+    const deletedDevice = await Device.findById(deviceId);
     if (!deletedDevice) {
       const error = new Error('未找到该设备');
-      error.status = 404;
+      error.status = 500;
       throw error;
     }
+    deletedDevice.isDeleted = true;
+    await deletedDevice.save();
 
     res.json({ 
       message: '设备已删除',

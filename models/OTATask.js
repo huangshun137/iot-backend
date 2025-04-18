@@ -5,7 +5,7 @@ const taskSchema = new mongoose.Schema({
   name: { type: String, required: true },
   status: { 
     type: String,
-    enum: ['pending', 'running', 'completed', 'canceled', 'failed'],
+    enum: ['pending', 'running', 'completed', 'canceled', 'stopping', 'failed'],
     default: 'pending'
   },
   package: { 

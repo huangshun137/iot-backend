@@ -7,6 +7,7 @@ const productSchema = new mongoose.Schema({
   type: { type: String, required: true },
   status: { type: Number, default: 0 },
   remark: { type: String },
+  isDeleted: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 

@@ -14,7 +14,7 @@ const deviceOTASchema = new mongoose.Schema({
   },
   status: { 
     type: String,
-    enum: ['pending', 'running', 'completed', 'canceled', 'failed'],
+    enum: ['pending', 'running', 'completed', 'canceled', 'stopping', 'failed'],
     default: 'pending'
   },
   path: { type: String },

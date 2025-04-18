@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const Package = require('../models/Package');
+const OTATask = require('../models/OTATask');
 const upload = require('../config/multerConfig');
 const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
@@ -77,7 +78,7 @@ router.post('/', upload.single('file') , asyncHandler(async (req, res) => {
 router.get('/', asyncHandler(async (req, res) => {
   try {
     // const { status } = req.query;
-    const query = {};
+    const query = { isDeleted: false };
     // if (status) {
     //   query.status = status;
     // }
@@ -120,7 +121,7 @@ router.get('/download/:id', asyncHandler(async (req, res) => {
   try {
     const packageId = req.params.id;
     const package = await Package.findById(packageId);
-    if (!package) return res.status(404).json('文件不存在');
+    if (!package || package.isDeleted) return res.status(500).json('文件不存在');
 
     // 实时计算MD5
     const filePath = path.resolve(
@@ -157,6 +158,15 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     return res.status(500).json({ error: '文档不存在' });
   }
 
+  // 2. 判断是否有正在执行的任务
+  const otaTask = await OTATask.findOne({
+    package: package._id,
+    status: { $in: ['pending', 'running'] }
+  });
+  if (otaTask) {
+    return res.status(500).json({ error: '资源包正在被使用，无法删除' });
+  }
+
   // 2. 获取文件路径（处理不同存储方式）
   const filePath = path.resolve(
     process.cwd(),
@@ -175,8 +185,9 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     }
   }
 
-  // 4. 删除数据库记录
-  await package.deleteOne();
+  package.isDeleted = true;
+  // 4. 删除数据库记录(逻辑删除)
+  await package.save();
 
   res.json({
     message: '删除成功',

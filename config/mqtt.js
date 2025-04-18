@@ -44,6 +44,7 @@ mqttClient.on('error', (err) => {
   console.error('MQTT error:', err);
 });
 
+const updateStatusList = ['pending', 'running', 'stopping'];
 // 判断是否更新OTA任务状态
 async function checkAndUpdateOTAStatus(deviceOTA) {
   const otaTask = await OTATask.findById(deviceOTA.otaTask);
@@ -59,7 +60,11 @@ async function checkAndUpdateOTAStatus(deviceOTA) {
       // 判断是否更新为新状态
       const otherStatus = deviceOTAStatusList.find(s => s !== deviceOTA.status);
       const otherDeviceOTA = deviceOTAs.filter(d => d._id !== deviceOTA._id);
-      if (otherDeviceOTA.every(d => d.status === otherStatus) && otaTask.status !== deviceOTA.status) {
+      if (
+        otherDeviceOTA.every(d => d.status === otherStatus) &&
+        otaTask.status !== deviceOTA.status &&
+        updateStatusList.includes(deviceOTA.status)
+      ) {
         otaTask.status = deviceOTA.status;
         await otaTask.save();
       }
@@ -72,7 +77,6 @@ async function updateDeviceStatus(device, msg) {
   let _deviceOTA;
   if (status === 'downloading') {
     // 设备正在下载资源包 更新OTA为状态为running
-    writeMqttLog('test-log', `正在下载资源包，device的id: ${device._id}`);
     _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: 'pending' });
     if (_deviceOTA) {
       _deviceOTA.status = 'running';
@@ -81,7 +85,6 @@ async function updateDeviceStatus(device, msg) {
     }
   } else if (status === 'download success') {
     // 设备下载资源包成功 更新OTA为状态为pending
-    writeMqttLog('test-log', `下载资源包成功，device的id: ${device._id}`);
     _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: 'running' });
     if (_deviceOTA) {
       _deviceOTA.status = 'pending';
@@ -103,6 +106,33 @@ async function updateDeviceStatus(device, msg) {
     if (_deviceOTA) {
       _deviceOTA.status = 'running';
       _deviceOTA.description = '正在升级中';
+      await _deviceOTA.save();
+    }
+  } else if (status === 'update success') {
+    // 更新OTA为状态为completed
+    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping']  } });
+    if (_deviceOTA) {
+      _deviceOTA.status = 'completed';
+      _deviceOTA.description = '升级成功';
+      await _deviceOTA.save();
+      device.version = msg.version;
+      await device.save();
+    }
+  } else if (status === 'update failed') {
+    // 更新OTA为状态为failed
+    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping']  } });
+    if (_deviceOTA) {
+      _deviceOTA.status = 'failed';
+      _deviceOTA.description = `升级失败：${msg.error}`;
+      await _deviceOTA.save();
+    }
+  } else if (status === 'update stopped') {
+    // 更新OTA为状态为canceled
+    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping']  } });
+    if (_deviceOTA) {
+      _deviceOTA.status = 'canceled';
+      _deviceOTA.description = '';
+      _deviceOTA.path = '';
       await _deviceOTA.save();
     }
   }
@@ -134,7 +164,8 @@ async function deviceOTADownload(device, msg) {
         type: "OTA",
         version: otaTask.package.version,
         startUpdate: true,
-        path: deviceOTA.path
+        path: deviceOTA.path,
+        entry: otaTask.package.entry
       });
       mqttClient.publish(topic, payload, { qos: 1 });
       console.log(`[OTA] 下发升级指令给设备 ${device.deviceId}`);

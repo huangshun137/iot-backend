@@ -44,7 +44,9 @@ router.post('/', asyncHandler(async (req, res) => {
 router.get('/', asyncHandler(async (req, res) => {
   try {
     const { status } = req.query;
-    const query = {};
+    const query = {
+      isDeleted: false
+    };
     if (status) {
       query.status = status;
     }
@@ -72,7 +74,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const product = await Product.findById(productId);
 
   // 处理未找到情况
-  if (!product) {
+  if (!product || product.isDeleted) {
     const error = new Error('未找到指定产品');
     error.statusCode = 500;
     throw error;
@@ -94,15 +96,20 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   }
 
   // 查找并删除产品
-  const deletedProduct = await Product.findByIdAndDelete(productId);
+  const deletedProduct = await Product.findById(productId);
   if (!deletedProduct) {
     const error = new Error('未找到该产品');
     error.status = 404;
     throw error;
   }
+  deletedProduct.isDeleted = true;
+  await deletedProduct.save();
 
   // 级联删除关联设备
-  await Device.deleteMany({ product: productId });
+  await Device.updateMany(
+    { product: productId },
+    { isDeleted: true }
+  );
   // 级联删除关联属性
   await Property.deleteMany({ product: productId });
   // 级联删除关联命令
