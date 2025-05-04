@@ -14,10 +14,7 @@ app.use(cors());
 app.use(express.json());
 
 // 数据库连接
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log('Connected to MongoDB'))
 .catch(err => console.error('MongoDB connection error:', err));
 
@@ -40,6 +37,7 @@ const { router: resParamsRouter } = require('./routes/resParams');
 app.use('/api/resParams', resParamsRouter);
 app.use('/api/packages', require('./routes/packages'));
 app.use('/api/otaTasks', require('./routes/otaTasks'));
+app.use('/api/agentDevices', require('./routes/agentDevice'));
 
 // 错误处理（必须放在所有路由之后！）
 app.use(errorHandler);

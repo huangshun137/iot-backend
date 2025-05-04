@@ -5,6 +5,7 @@ const deviceSchema = new mongoose.Schema({
   name: { type: String },
   code: { type: String, required: true },
   deviceId: { type: String, required: true, unique: true },
+  ipAddress: { type: String },
   product: { 
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product',

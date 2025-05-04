@@ -28,7 +28,7 @@ mqttClient.on('connect', async () => {
   try {
     const devices = await Device.find();
     const topics = devices.map(d => `/devices/${d.deviceId}/sys/messages/up`);
-    
+
     if (topics.length > 0) {
       mqttClient.subscribe(topics, err => {
         if (err) return console.error('Initial subscribe error:', err);
@@ -110,17 +110,19 @@ async function updateDeviceStatus(device, msg) {
     }
   } else if (status === 'update success') {
     // 更新OTA为状态为completed
-    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping']  } });
+    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping'] } });
     if (_deviceOTA) {
       _deviceOTA.status = 'completed';
       _deviceOTA.description = '升级成功';
       await _deviceOTA.save();
-      device.version = msg.version;
-      await device.save();
+      if (device.product.type !== 'Agent') {
+        device.version = msg.version;
+        await device.save();
+      }
     }
   } else if (status === 'update failed') {
     // 更新OTA为状态为failed
-    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping']  } });
+    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping'] } });
     if (_deviceOTA) {
       _deviceOTA.status = 'failed';
       _deviceOTA.description = `升级失败：${msg.error}`;
@@ -128,7 +130,7 @@ async function updateDeviceStatus(device, msg) {
     }
   } else if (status === 'update stopped') {
     // 更新OTA为状态为canceled
-    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping']  } });
+    _deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['running', 'stopping'] } });
     if (_deviceOTA) {
       _deviceOTA.status = 'canceled';
       _deviceOTA.description = '';
@@ -147,25 +149,32 @@ async function deviceOTADownload(device, msg) {
     const otaTask = await OTATask.findById(deviceOTA.otaTask).populate('package');
     if (!otaTask || otaTask.package.version === msg.version) return;
     const topic = `/devices/${device.deviceId}/sys/messages/down`;
-    const baseUrl = getLocalIp() + ':' + process.env.PORT;
+    // const baseUrl = getLocalIp() + ':' + process.env.PORT;
+    const baseUrl = process.env.DOWNLOAD_BASE_URL;
     if (deviceOTA.description === '查询版本中') {
       // 下发升级包下载指令
       const payload = JSON.stringify({
         type: "OTA",
-        url: `http://${baseUrl}/api/packages/download/${otaTask.package._id}`,
+        url: `${baseUrl}/api/packages/download/${otaTask.package._id}`,
         version: otaTask.package.version,
-        md5: otaTask.package.md5
+        filename: otaTask.package.name,
+        md5: otaTask.package.md5,
+        path: deviceOTA.path,
+        entry: otaTask.package.entry,
+        processPath: otaTask.package.processPath,
       });
       mqttClient.publish(topic, payload, { qos: 1 });
       console.log(`[OTA] 下发升级包下载指令给设备 ${device.deviceId}`);
     } else if (deviceOTA.description === '等待设备空闲') {
+      // TODO 需等待设备空闲状态
       // 下发升级指令
       const payload = JSON.stringify({
         type: "OTA",
         version: otaTask.package.version,
         startUpdate: true,
         path: deviceOTA.path,
-        entry: otaTask.package.entry
+        entry: otaTask.package.entry,
+        processPath: otaTask.package.processPath,
       });
       mqttClient.publish(topic, payload, { qos: 1 });
       console.log(`[OTA] 下发升级指令给设备 ${device.deviceId}`);
@@ -182,7 +191,7 @@ mqttClient.on('message', async (topic, message) => {
     if (topic.indexOf('/sys/messages/up') > -1) {
       // 消息上报，更新设备为在线
       const deviceId = topic.split('/')[2];
-      const device = await Device.findOne({ deviceId });
+      const device = await Device.findOne({ deviceId }).populate('product');
       if (!device) return;
       // 更新活跃时间
       device.lastActive = new Date();

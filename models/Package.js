@@ -2,11 +2,12 @@
 const mongoose = require('mongoose');
 
 const packageSchema = new mongoose.Schema({
-  name: { type: String, required: true },
+  name: { type: String, required: true }, // 资源包名称
   version: { type: String, required: true },
   description: { type: String },
-  entry: { type: String, default: 'main.py' },
-  filePath: { type: String, required: true },
+  entry: { type: String, default: 'main.py' }, // 资源包运行入口文件名
+  processPath: { type: String }, // 资源包进程文件名
+  filePath: { type: String, required: true }, // 资源包存储路径
   size: { type: Number, required: true },
   md5: { type: String, required: true },
   product: { 

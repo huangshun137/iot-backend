@@ -25,8 +25,15 @@ const storage = multer.diskStorage({
 
 // 文件过滤（可选）
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['application/x-compressed'];
-  if (allowedTypes.includes(file.mimetype)) {
+  const allowedMimeTypes = [
+    'application/zip',              // ZIP
+    'application/x-rar-compressed', // RAR
+    'application/vnd.rar',          // RAR的另一种MIME类型
+    'application/x-7z-compressed'   // 7Z
+  ];
+  const allowedExtensions = ['.zip', '.rar', '.7z'];
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
     cb(null, true);
   } else {
     cb(new Error('Invalid file type'), false);
