@@ -94,7 +94,8 @@ router.get('/', asyncHandler(async (req, res) => {
     query.agentId = agentId;
   }
   if (agentDeviceId) {
-    agent_device = await Device.findOne({ deviceId: agentDeviceId });
+    console.log('agentDeviceId:::', agentDeviceId);
+    agent_device = await Device.findOne({ deviceId: decodeURIComponent(agentDeviceId) });
     if (!agent_device) {
       const error = new Error('未找到该设备');
       error.status = 404;

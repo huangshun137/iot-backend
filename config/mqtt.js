@@ -145,6 +145,7 @@ async function updateDeviceStatus(device, msg) {
 async function deviceOTADownload(device, msg) {
   // const deviceOTA = await DeviceOTA.findOne({ device: device._id, status: { $in: ['pending', 'running'] } });
   const deviceOTA = await DeviceOTA.findOne({ device: device._id, status: 'pending' });
+  // console.log(`[OTA] 设备 ${device.deviceId} 升级包下载状态 ${deviceOTA ? deviceOTA.status : '无'}`);
   if (deviceOTA) {
     const otaTask = await OTATask.findById(deviceOTA.otaTask).populate('package');
     if (!otaTask || otaTask.package.version === msg.version) return;
@@ -171,6 +172,7 @@ async function deviceOTADownload(device, msg) {
       const payload = JSON.stringify({
         type: "OTA",
         version: otaTask.package.version,
+        filename: otaTask.package.name,
         startUpdate: true,
         path: deviceOTA.path,
         entry: otaTask.package.entry,
@@ -185,8 +187,8 @@ async function deviceOTADownload(device, msg) {
 mqttClient.on('message', async (topic, message) => {
   try {
     // 日志记录
-    writeMqttLog(topic, message);
-    console.log(`[MQTT][${new Date()}] ${topic} => ${message.toString()}`);
+    // writeMqttLog(topic, message);
+    // console.log(`[MQTT][${new Date()}] ${topic} => ${message.toString()}`);
     const msg = JSON.parse(message.toString());
     if (topic.indexOf('/sys/messages/up') > -1) {
       // 消息上报，更新设备为在线

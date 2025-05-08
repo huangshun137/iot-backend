@@ -43,7 +43,7 @@ app.use('/api/agentDevices', require('./routes/agentDevice'));
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`[${new Date()}] Server running on port ${PORT}`);
 });
 
 // 全局未处理Promise拒绝
