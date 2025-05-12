@@ -39,7 +39,7 @@ router.post('/', asyncHandler(async (req, res) => {
     // 修改后通知agent端做对应的mqtt监听变更
     req.app.mqttClient.publish(`/devices/${agentDevice.deviceId}/sys/messages/down`, JSON.stringify({
       type: 'agentDeviceUpdate',
-      deviceId: updatedDevice.device.deviceId,
+      deviceId: updatedDevice.device?.deviceId,
       agentDevice: updatedDevice
     }));
 

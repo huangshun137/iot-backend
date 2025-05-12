@@ -12,6 +12,7 @@ const agentDeviceSchema = new mongoose.Schema({
   directory: { type: String, required: true },
   entryName: { type: String, required: true },
   condaEnv: { type: String },
+  startCommand: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 
